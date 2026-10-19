@@ -1,0 +1,1030 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Writing Protocol</title>
+<meta name="description" content="Juego retro para memorizar writings en inglés palabra por palabra.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+  /* Layout: un único marco de doble borde centrado; dentro, pantallas que se alternan (mapa → memorizar → escribir → final). */
+  /* Estética deliberadamente oscura de un solo tema (pantalla RPG retro de 8 bits). */
+  :root {
+    --bg: #000;
+    --fg: #fff;
+    --dim: #9a9a9a;
+    --faint: #3c3c3c;
+    --panel: #0d0d0d;
+    --yellow: #ffe600;
+    --green: #00ff00;
+    --red: #ff2a3c;
+    --heart: #ff3b5c;
+    --det-bg: #3a0000;
+    --font-pixel: "Press Start 2P", "Courier New", monospace;
+    --font-term: "VT323", "Courier New", monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; }
+  html, body { background: var(--bg); color: var(--fg); }
+  body {
+    font-family: var(--font-term);
+    font-size: 22px;
+    line-height: 1.35;
+    padding-block: 24px 40px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  .frame {
+    max-width: 1000px;
+    margin: 0 auto;
+    border: 7px double var(--fg);
+    padding: clamp(18px, 4vw, 36px);
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  .frame.shake { animation: shake .4s linear; }
+  @keyframes shake {
+    0%,100% { transform: translate(0,0); }
+    20% { transform: translate(-8px, 3px); }
+    40% { transform: translate(7px, -4px); }
+    60% { transform: translate(-6px, 2px); }
+    80% { transform: translate(4px, -1px); }
+  }
+
+  /* ---------- Cabecera ---------- */
+  .top-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 16px; }
+  .sync { font-size: 19px; min-width: 0; }
+  .hero { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+  .hero .big-heart { width: 42px; color: var(--heart); animation: beat 1.4s steps(2) infinite; }
+  @keyframes beat { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+  h1 {
+    font-family: var(--font-pixel);
+    color: var(--yellow);
+    font-size: clamp(15px, 3.2vw, 22px);
+    font-weight: 400;
+    letter-spacing: .04em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .subtitle { color: var(--dim); text-transform: uppercase; letter-spacing: .08em; margin: 0; }
+
+  .mission { border-left: 5px solid var(--yellow); padding: 4px 0 4px 16px; }
+  .mission h2, .section-label {
+    font-family: var(--font-pixel);
+    color: var(--yellow);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: .08em;
+    margin: 0 0 8px;
+  }
+  .mission p { margin: 0; }
+  .green { color: var(--green); }
+  .yellow { color: var(--yellow); }
+  .red { color: var(--red); }
+  .dim { color: var(--dim); }
+
+  /* ---------- Botones ---------- */
+  .btn {
+    font-family: var(--font-pixel);
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--fg);
+    background: transparent;
+    border: 2px solid var(--fg);
+    padding: 12px 14px;
+    cursor: pointer;
+    line-height: 1.4;
+  }
+  .btn:hover, .btn:focus-visible { color: var(--yellow); border-color: var(--yellow); background: var(--panel); outline: none; }
+  .btn.primary { color: var(--yellow); border-color: var(--yellow); }
+  .btn.primary:hover, .btn.primary:focus-visible { background: var(--yellow); color: var(--bg); }
+  .btn.danger:hover, .btn.danger:focus-visible { color: var(--red); border-color: var(--red); }
+  .btn.small { font-size: 9px; padding: 9px 10px; }
+  .btn[disabled] { color: var(--faint); border-color: var(--faint); cursor: not-allowed; background: transparent; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .btn-row.center { justify-content: center; }
+
+  .badge {
+    font-family: var(--font-pixel);
+    font-size: 10px;
+    color: var(--yellow);
+    border: 2px solid var(--yellow);
+    padding: 6px 8px;
+    white-space: nowrap;
+    align-self: start;
+  }
+
+  /* ---------- Formulario ---------- */
+  .panel { border: 2px solid var(--fg); padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .field-label { font-family: var(--font-pixel); font-size: 10px; letter-spacing: .06em; color: var(--dim); }
+  .field {
+    width: 100%;
+    font-family: var(--font-term);
+    font-size: 24px;
+    color: var(--fg);
+    background: var(--bg);
+    border: 2px solid var(--fg);
+    padding: 10px 14px;
+    border-radius: 0;
+  }
+  .field:focus { outline: none; border-color: var(--yellow); }
+  textarea.field { min-height: 190px; resize: vertical; line-height: 1.3; }
+  .field-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-msg { min-height: 1.2em; margin: 0; }
+
+  .toggle {
+    font-family: var(--font-term);
+    font-size: 22px;
+    color: var(--fg);
+    background: none;
+    border: none;
+    padding: 2px 0;
+    cursor: pointer;
+    text-align: left;
+  }
+  .toggle .box { color: var(--yellow); }
+  .toggle:hover, .toggle:focus-visible { color: var(--yellow); outline: none; }
+
+  /* ---------- Zonas del mapa ---------- */
+  .zones { display: flex; flex-direction: column; gap: 14px; }
+  .zone {
+    border: 2px solid var(--fg);
+    padding: 16px 20px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 16px;
+  }
+  .zone-name { font-family: var(--font-pixel); font-size: 13px; line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
+  .zone-sub { color: var(--dim); margin: 2px 0 0; }
+  .zone .btn-row { grid-column: 1 / -1; }
+  .zone.cleared { border-color: var(--green); }
+  .zone.cleared .zone-name { color: var(--green); }
+  .zone.cleared .badge { color: var(--green); border-color: var(--green); }
+  .empty { border: 2px solid var(--faint); color: var(--dim); padding: 20px; }
+
+  /* ---------- Juego ---------- */
+  .game-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 10px 20px; }
+  .game-title { font-family: var(--font-term); font-size: 34px; color: var(--yellow); margin: 0; overflow-wrap: anywhere; min-width: 0; }
+  .game-title small { color: var(--dim); font-size: 20px; margin-left: 8px; }
+  .hearts { display: flex; gap: 10px; }
+  .hearts svg { width: 30px; color: var(--heart); }
+  .hearts svg.lost { color: var(--faint); }
+  .hearts svg.breaking { animation: crack .6s steps(4) forwards; }
+  @keyframes crack {
+    0% { transform: scale(1); color: var(--heart); }
+    35% { transform: scale(1.3) rotate(-12deg); color: #fff; }
+    70% { transform: scale(.85) rotate(10deg); color: var(--heart); }
+    100% { transform: scale(1); color: var(--faint); }
+  }
+
+  .det { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 12px; }
+  .det-label { font-family: var(--font-pixel); color: var(--yellow); font-size: 12px; }
+  .det-bar { height: 22px; border: 2px solid var(--fg); background: var(--det-bg); position: relative; }
+  .det-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--yellow); transition: width .25s steps(6); }
+  .det-count { color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .stats-line { color: var(--dim); margin: 0; font-variant-numeric: tabular-nums; }
+
+  .textbox {
+    border: 5px solid var(--fg);
+    padding: clamp(16px, 3vw, 28px);
+    font-size: 26px;
+    line-height: 1.45;
+    min-height: 170px;
+    overflow-wrap: anywhere;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+  .textbox .placeholder { color: var(--dim); }
+  .w-ok { color: var(--green); }
+  .w-bad { color: var(--bg); background: var(--red); padding: 0 4px; }
+  .w-here { color: var(--bg); background: var(--yellow); padding: 0 4px; }
+  .flash { animation: flash .5s steps(3); }
+  @keyframes flash { 0% { color: var(--bg); background: var(--yellow); } 100% { color: var(--fg); background: transparent; } }
+  .cursor { display: inline-block; width: .55em; height: .9em; background: var(--fg); vertical-align: -0.1em; margin-left: 4px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .dialog { margin: 0; }
+  .typing { display: flex; flex-direction: column; gap: 10px; }
+  .typing-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .typing-row .field { flex: 1 1 260px; min-width: 0; }
+  .hint-note { color: var(--dim); text-align: center; margin: 0; }
+
+  /* ---------- Final ---------- */
+  .end { display: flex; flex-direction: column; align-items: center; gap: 20px; text-align: center; padding-block: 20px; }
+  .end h2 { font-family: var(--font-pixel); font-weight: 400; font-size: clamp(26px, 7vw, 54px); margin: 0; letter-spacing: .06em; }
+  .end h2.win { color: var(--yellow); font-size: clamp(18px, 4.5vw, 30px); }
+  .end-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 32px; text-align: left; font-variant-numeric: tabular-nums; }
+  .end-stats dt { color: var(--dim); }
+  .end-stats dd { margin: 0; color: var(--fg); text-align: right; }
+  .end-detail { margin: 0; }
+
+  @media (max-width: 520px) {
+    body { font-size: 20px; }
+    .textbox { font-size: 22px; }
+    .zone { grid-template-columns: 1fr; }
+    .badge { justify-self: start; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="frame" id="frame">
+  <div class="top-bar">
+    <span class="sync dim" id="sync-status" role="status">◇ Progreso guardado en este dispositivo</span>
+    <div class="btn-row">
+      <button class="btn small" id="auth-btn" type="button" hidden>INICIAR SESIÓN CON GOOGLE</button>
+      <button class="btn small" id="sound-btn" type="button">♪ Sonido: OFF</button>
+    </div>
+  </div>
+
+  <!-- ================= PANTALLA 1: MAPA ================= -->
+  <section id="screen-map" style="display:flex;flex-direction:column;gap:22px">
+    <header class="hero">
+      <div class="big-heart" data-heart></div>
+      <h1>WRITING PROTOCOL</h1>
+      <p class="subtitle">* No pierdas tu determinación</p>
+    </header>
+
+    <div class="mission">
+      <h2>MISSION OBJECTIVE:</h2>
+      <p>Memoriza el texto y escríbelo palabra por palabra sin verlo. Cada error o pista te cuesta una de tus 3 vidas. Los textos superados aparecen en <span class="green">VERDE</span>.</p>
+    </div>
+
+    <div class="zones" id="zones"></div>
+
+    <div class="panel" id="form-panel">
+      <p class="section-label" id="form-title">NUEVO TEXTO</p>
+      <div class="field-group">
+        <label class="field-label" for="in-name">NOMBRE DEL TEXTO</label>
+        <input class="field" id="in-name" type="text" maxlength="80" placeholder="Ej: Writing 1 – Invitation" autocomplete="off">
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="in-text">TEXTO</label>
+        <textarea class="field" id="in-text" placeholder="Pega aquí tu writing en inglés..."></textarea>
+      </div>
+      <p class="form-msg" id="form-msg"></p>
+      <div class="btn-row">
+        <button class="btn primary" id="save-btn" type="button">GUARDAR</button>
+        <button class="btn" id="cancel-edit-btn" type="button" hidden>CANCELAR</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <p class="section-label">CONFIGURACIÓN</p>
+      <button class="toggle" id="tg-caps" type="button"></button>
+      <button class="toggle" id="tg-punct" type="button"></button>
+    </div>
+  </section>
+
+  <!-- ================= PANTALLA 2: MEMORIZAR ================= -->
+  <section id="screen-study" hidden style="flex-direction:column;gap:20px">
+    <div class="game-head">
+      <h2 class="game-title" id="study-title"></h2>
+      <span class="badge" id="study-count"></span>
+    </div>
+    <p class="dialog">* Memoriza el texto. Cuando estés listo, se ocultará.</p>
+    <div class="textbox" id="study-text"></div>
+    <div class="btn-row">
+      <button class="btn primary" id="study-ready" type="button">ESTOY LISTO</button>
+      <button class="btn" id="study-back" type="button">VOLVER AL MAPA</button>
+    </div>
+  </section>
+
+  <!-- ================= PANTALLA 3: JUEGO ================= -->
+  <section id="screen-game" hidden style="flex-direction:column;gap:18px">
+    <div class="game-head">
+      <h2 class="game-title" id="game-title"></h2>
+      <div class="hearts" id="hearts" aria-label="Vidas"></div>
+    </div>
+    <div class="det">
+      <span class="det-label">DET</span>
+      <div class="det-bar"><div class="det-fill" id="det-fill"></div></div>
+      <span class="det-count" id="det-count">0 / 0</span>
+    </div>
+    <p class="stats-line" id="stats-line"></p>
+
+    <!-- Modo escritura -->
+    <div id="type-mode" style="display:flex;flex-direction:column;gap:16px">
+      <div class="textbox" id="written"></div>
+      <div class="typing">
+        <label class="dialog" for="word-input">* Escribe la siguiente palabra y presiona ESPACIO o ENTER.</label>
+        <div class="typing-row">
+          <input class="field" id="word-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text">
+          <button class="btn" id="hint-btn" type="button">PISTA (-1 ❤)</button>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn danger small" id="quit-btn" type="button">ABANDONAR</button>
+      </div>
+    </div>
+
+    <!-- Modo revelado (error o pista). El texto solo existe en el DOM mientras se muestra. -->
+    <div id="reveal-mode" hidden style="flex-direction:column;gap:16px">
+      <p class="dialog" id="reveal-msg"></p>
+      <div class="textbox" id="reveal-text"></div>
+      <div class="btn-row">
+        <button class="btn primary" id="reveal-ready" type="button">ESTOY LISTO</button>
+      </div>
+    </div>
+
+    <!-- Confirmación de última vida -->
+    <div id="confirm-mode" hidden style="flex-direction:column;gap:16px">
+      <p class="dialog red">* Esta pista te costará tu última vida. ¿Continuar?</p>
+      <div class="btn-row">
+        <button class="btn danger" id="confirm-yes" type="button">SÍ</button>
+        <button class="btn primary" id="confirm-no" type="button">NO</button>
+      </div>
+    </div>
+
+    <!-- Confirmación de abandonar -->
+    <div id="quit-mode" hidden style="flex-direction:column;gap:16px">
+      <p class="dialog">* ¿Abandonar este intento? Tu progreso actual se perderá.</p>
+      <div class="btn-row">
+        <button class="btn danger" id="quit-yes" type="button">ABANDONAR</button>
+        <button class="btn primary" id="quit-no" type="button">SEGUIR</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PANTALLA 4: FINAL ================= -->
+  <section id="screen-end" hidden>
+    <div class="end">
+      <h2 id="end-title">GAME OVER</h2>
+      <p class="dialog" id="end-msg"></p>
+      <p class="end-detail" id="end-detail"></p>
+      <dl class="end-stats" id="end-stats"></dl>
+      <div class="btn-row center">
+        <button class="btn primary" id="end-retry" type="button">REINTENTAR</button>
+        <button class="btn" id="end-map" type="button">VOLVER AL MAPA</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ============================================================
+     CONFIGURACIÓN DE FIREBASE
+     Pega aquí los datos de tu proyecto (paso 2 de las instrucciones).
+     Si lo dejas vacío, la página funciona igual, pero sin sincronizar.
+     ============================================================ -->
+<script>
+  window.FIREBASE_CONFIG = {
+    apiKey: "",
+    authDomain: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: ""
+  };
+</script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ================= Almacenamiento ================= */
+  /* Dos niveles de guardado:
+     1) localStorage: siempre, para que la página funcione al instante y sin cuenta.
+     2) Firebase (opcional): quien inicia sesión con Google tiene su progreso
+        sincronizado entre todos sus dispositivos. */
+  const LS_KEY = 'writing-protocol-v1';
+  const store = { texts: [], settings: { caps: true, punct: true }, sound: false, seeded: false, deleted: [] };
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (Array.isArray(data.texts)) store.texts = data.texts;
+      store.settings = Object.assign({ caps: true, punct: true }, data.settings || {});
+      store.sound = !!data.sound;
+      store.seeded = !!data.seeded;
+      store.deleted = Array.isArray(data.deleted) ? data.deleted : [];
+    } catch (e) { /* sin almacenamiento: la página funciona igual en memoria */ }
+  }
+  function saveLocal() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) {}
+  }
+  function save() { saveLocal(); queueRemote(); }
+
+  /* ---------- Sincronización con Firebase ---------- */
+  let remoteRef = null;        // documento privado del usuario: users/<uid>
+  let unsubscribe = null;
+  let lastRemoteJson = '';     // último estado escrito o recibido (para ignorar ecos)
+  let writing = false, dirty = false, retries = 0;
+  let auth = null, currentUser = null;
+
+  const SYNC_LABELS = {
+    off: ['◇ Progreso guardado en este dispositivo', 'dim'],
+    signedout: ['◇ Inicia sesión para sincronizar tus dispositivos', 'dim'],
+    connecting: ['◇ Conectando...', 'dim'],
+    synced: ['◆ Sincronizado', 'green'],
+    error: ['◇ Sin conexión: guardado en este dispositivo', 'red']
+  };
+  function setSync(state) {
+    const el = document.getElementById('sync-status');
+    if (!el) return;
+    const [txt, cls] = SYNC_LABELS[state];
+    el.textContent = state === 'synced' && currentUser
+      ? `${txt} · ${currentUser.displayName || currentUser.email || 'tu cuenta'}`
+      : txt;
+    el.className = 'sync ' + cls;
+  }
+
+  function remotePayload() {
+    return { texts: store.texts, settings: store.settings, seeded: store.seeded, deleted: store.deleted.slice(-200) };
+  }
+  function payloadJson(d) {
+    return JSON.stringify({ texts: d.texts || [], settings: d.settings || {}, seeded: !!d.seeded, deleted: d.deleted || [] });
+  }
+
+  async function queueRemote() {
+    if (!remoteRef) return;
+    if (writing) { dirty = true; return; }
+    writing = true;
+    try {
+      do {
+        dirty = false;
+        const p = JSON.parse(JSON.stringify(remotePayload())); // Firestore no acepta undefined
+        lastRemoteJson = payloadJson(p);
+        await remoteRef.set(p);
+        retries = 0;
+        setSync('synced');
+      } while (dirty);
+    } catch (e) {
+      console.warn('Error al guardar en Firebase:', e);
+      setSync('error');
+      if (retries < 3) { retries++; setTimeout(() => queueRemote(), 2000 + Math.random() * 2000); }
+    } finally {
+      writing = false;
+    }
+  }
+
+  /* Une lo guardado en este dispositivo con lo guardado en la nube (sin perder récords) */
+  function mergeRemote(remote) {
+    const deleted = new Set([...(remote.deleted || []), ...store.deleted]);
+    const out = [], byId = new Map();
+    (remote.texts || []).forEach(t => {
+      if (deleted.has(t.id)) return;
+      const c = Object.assign({}, t);
+      out.push(c); byId.set(c.id, c);
+    });
+    store.texts.forEach(t => {
+      if (deleted.has(t.id)) return;
+      const r = byId.get(t.id);
+      if (r) {
+        if (r.text === t.text) {
+          r.best = Math.max(r.best || 0, t.best || 0);
+          r.cleared = !!(r.cleared || t.cleared);
+          r.bestLives = Math.max(r.bestLives || 0, t.bestLives || 0);
+          r.attempts = Math.max(r.attempts || 0, t.attempts || 0);
+        }
+        return;
+      }
+      if (out.some(o => o.name === t.name && o.text === t.text)) return;
+      out.push(Object.assign({}, t));
+    });
+    store.texts = out;
+    store.deleted = [...deleted].slice(-200);
+    store.settings = Object.assign({ caps: true, punct: true }, remote.settings || store.settings);
+    store.seeded = store.seeded || !!remote.seeded;
+  }
+
+  /* Cambios hechos desde otro dispositivo, en vivo */
+  function applyRemote(d) {
+    const copy = JSON.parse(JSON.stringify(d));
+    store.texts = Array.isArray(copy.texts) ? copy.texts : [];
+    store.settings = Object.assign({ caps: true, punct: true }, copy.settings || {});
+    store.seeded = !!copy.seeded;
+    store.deleted = Array.isArray(copy.deleted) ? copy.deleted : [];
+    saveLocal();
+    if (!document.getElementById('screen-map').hidden) renderMap();
+  }
+
+  async function connectUser(user) {
+    currentUser = user;
+    setSync('connecting');
+    const ref = firebase.firestore().collection('users').doc(user.uid);
+    try {
+      const snap = await ref.get();
+      const data = snap.exists ? snap.data() : null;
+      const before = data ? payloadJson(data) : '';
+      if (data) mergeRemote(JSON.parse(JSON.stringify(data)));
+      remoteRef = ref;
+      saveLocal();
+      if (!document.getElementById('screen-map').hidden) renderMap();
+      if (payloadJson(remotePayload()) !== before) await queueRemote();
+      else { lastRemoteJson = before; setSync('synced'); }
+      unsubscribe = ref.onSnapshot(s => {
+        if (!s.exists || s.metadata.hasPendingWrites) return;
+        const d = s.data();
+        const j = payloadJson(d);
+        if (j === lastRemoteJson) return;
+        lastRemoteJson = j;
+        applyRemote(d);
+        setSync('synced');
+      }, err => { console.warn(err); setSync('error'); });
+    } catch (e) {
+      console.warn('No se pudo conectar con Firebase:', e);
+      remoteRef = null;
+      setSync('error');
+    }
+  }
+
+  function disconnectUser() {
+    if (unsubscribe) unsubscribe();
+    unsubscribe = null;
+    remoteRef = null;
+    currentUser = null;
+    lastRemoteJson = '';
+  }
+
+  function renderAuthButton() {
+    const b = document.getElementById('auth-btn');
+    if (!b) return;
+    b.hidden = !auth;
+    b.textContent = currentUser ? 'CERRAR SESIÓN' : 'INICIAR SESIÓN CON GOOGLE';
+  }
+
+  function initSync() {
+    const cfg = window.FIREBASE_CONFIG;
+    const configured = cfg && cfg.apiKey && cfg.projectId && typeof window.firebase !== 'undefined';
+    if (!configured) { setSync('off'); renderAuthButton(); return; }
+    try {
+      firebase.initializeApp(cfg);
+      auth = firebase.auth();
+    } catch (e) {
+      console.warn('Configuración de Firebase inválida:', e);
+      setSync('off'); return;
+    }
+    renderAuthButton();
+    auth.onAuthStateChanged(user => {
+      disconnectUser();
+      if (user) connectUser(user); else setSync('signedout');
+      currentUser = user || null;
+      renderAuthButton();
+    });
+    // Completa un inicio de sesión hecho por redirección (si el popup estaba bloqueado)
+    auth.getRedirectResult().catch(e => console.warn(e));
+
+    document.getElementById('auth-btn').addEventListener('click', async () => {
+      if (currentUser) { await auth.signOut(); return; }
+      const provider = new firebase.auth.GoogleAuthProvider();
+      try {
+        await auth.signInWithPopup(provider);
+      } catch (e) {
+        if (e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment')) {
+          auth.signInWithRedirect(provider);
+        } else if (e && e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
+          console.warn(e);
+          setSync('error');
+        }
+      }
+    });
+  }
+
+  /* Texto de ejemplo (solo la primera vez, para que el mapa no esté vacío) */
+  const SAMPLE = {
+    name: 'EJEMPLO · Party invitation',
+    text: "Hi Sarah,\n\nI'm having a small party at my flat next Saturday to celebrate the end of the semester. It starts at eight o'clock in the evening.\n\nWe're going to cook pizza together and play some board games. Could you bring a dessert or something to drink?\n\nLet me know if you can come. I hope to see you there!\n\nLove,\nMartina"
+  };
+
+  /* ================= Utilidades ================= */
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+  const HEART = ['.##.##.', '#######', '#######', '.#####.', '..###..', '...#...'];
+  function heartSVG(cls = '') {
+    let r = '';
+    HEART.forEach((row, y) => [...row].forEach((c, x) => { if (c === '#') r += `<rect x="${x}" y="${y}" width="1" height="1"/>`; }));
+    return `<svg class="${cls}" viewBox="0 0 7 6" shape-rendering="crispEdges" fill="currentColor" aria-hidden="true">${r}</svg>`;
+  }
+  document.querySelectorAll('[data-heart]').forEach(el => el.innerHTML = heartSVG());
+
+  /* Divide el texto en palabras, recordando cuántos saltos de línea había antes de cada una */
+  function tokenize(text) {
+    const out = [];
+    const re = /\S+/g;
+    let m, last = 0;
+    while ((m = re.exec(text))) {
+      const gap = text.slice(last, m.index);
+      const nl = (gap.match(/\n/g) || []).length;
+      out.push({ w: m[0], nl: out.length ? nl : 0 });
+      last = m.index + m[0].length;
+    }
+    return out;
+  }
+
+  /* Normaliza una palabra según la configuración */
+  function norm(w) {
+    let s = w.normalize('NFC').replace(/[’‘`´]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-');
+    if (!store.settings.punct) s = s.replace(/[^\p{L}\p{N}]/gu, '');
+    if (!store.settings.caps) s = s.toLowerCase();
+    return s;
+  }
+
+  /* Pinta palabras respetando párrafos. cls(i) devuelve la clase de cada palabra */
+  function renderTokens(tokens, cls) {
+    let html = '';
+    tokens.forEach((t, i) => {
+      if (i > 0) html += t.nl >= 2 ? '<br><br>' : t.nl === 1 ? '<br>' : ' ';
+      const c = cls ? cls(i) : '';
+      html += c ? `<span class="${c}">${esc(t.w)}</span>` : esc(t.w);
+    });
+    return html;
+  }
+
+  /* ================= Sonido (Web Audio, 8-bit) ================= */
+  let actx = null;
+  function beep(freqs, dur = 0.08, type = 'square') {
+    if (!store.sound) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      let t = actx.currentTime;
+      freqs.forEach(f => {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = type; o.frequency.value = f;
+        g.gain.setValueAtTime(0.06, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        o.connect(g).connect(actx.destination);
+        o.start(t); o.stop(t + dur);
+        t += dur;
+      });
+    } catch (e) {}
+  }
+  const sfx = {
+    ok: () => beep([880], 0.04),
+    bad: () => beep([220, 160], 0.12),
+    die: () => beep([392, 330, 262, 196, 131], 0.16),
+    win: () => beep([523, 659, 784, 1047], 0.12),
+    hint: () => beep([600, 450], 0.08)
+  };
+
+  /* ================= Navegación ================= */
+  const screens = ['map', 'study', 'game', 'end'];
+  function show(name) {
+    screens.forEach(s => {
+      const el = $('screen-' + s);
+      el.hidden = s !== name;
+      if (s !== name) return;
+      el.style.display = s === 'end' ? 'block' : 'flex';
+    });
+    // El texto original nunca queda en el DOM fuera de las pantallas que lo muestran
+    if (name !== 'study') $('study-text').innerHTML = '';
+    window.scrollTo({ top: 0 });
+  }
+  function shake() {
+    const f = $('frame');
+    f.classList.remove('shake'); void f.offsetWidth; f.classList.add('shake');
+  }
+
+  /* ================= Mapa ================= */
+  let editingId = null;
+  let pendingDelete = null;
+
+  function renderMap() {
+    const z = $('zones');
+    if (!store.texts.length) {
+      z.innerHTML = `<div class="empty">* Aún no hay textos. Agrega tu primer writing en el formulario de abajo.</div>`;
+    } else {
+      z.innerHTML = store.texts.map((t, i) => {
+        const total = tokenize(t.text).length;
+        const best = Math.min(t.best || 0, total);
+        const pct = total ? Math.round(best / total * 100) : 0;
+        const status = t.cleared
+          ? `CLEARED · mejor final con ${t.bestLives} ${t.bestLives === 1 ? 'vida' : 'vidas'}`
+          : (t.attempts ? `Récord: ${best} / ${total} palabras (${pct}%)` : 'Sin intentos todavía');
+        const buttons = pendingDelete === t.id
+          ? `<span class="red" style="align-self:center">* ¿Borrar este texto?</span>
+             <button class="btn danger small" data-act="del-yes" data-id="${t.id}" type="button">SÍ, BORRAR</button>
+             <button class="btn small" data-act="del-no" type="button">NO</button>`
+          : `<button class="btn primary small" data-act="play" data-id="${t.id}" type="button">JUGAR</button>
+             <button class="btn small" data-act="edit" data-id="${t.id}" type="button">EDITAR</button>
+             <button class="btn danger small" data-act="del" data-id="${t.id}" type="button">BORRAR</button>`;
+        return `<article class="zone ${t.cleared ? 'cleared' : ''}">
+          <div style="min-width:0">
+            <p class="zone-name">${i + 1}. ${esc(t.name)}</p>
+            <p class="zone-sub">${status} · ${t.attempts || 0} ${t.attempts === 1 ? 'intento' : 'intentos'}</p>
+          </div>
+          <span class="badge">${total} palabras</span>
+          <div class="btn-row">${buttons}</div>
+        </article>`;
+      }).join('');
+    }
+    $('tg-caps').innerHTML = `<span class="box">[${store.settings.caps ? 'X' : ' '}]</span> Exigir mayúsculas`;
+    $('tg-punct').innerHTML = `<span class="box">[${store.settings.punct ? 'X' : ' '}]</span> Exigir puntuación <span class="dim">(comas, puntos, apóstrofos...)</span>`;
+    $('sound-btn').textContent = `♪ Sonido: ${store.sound ? 'ON' : 'OFF'}`;
+  }
+
+  $('zones').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    const id = b.dataset.id;
+    switch (b.dataset.act) {
+      case 'play': pendingDelete = null; startStudy(id); break;
+      case 'edit': pendingDelete = null; startEdit(id); break;
+      case 'del': pendingDelete = id; renderMap(); break;
+      case 'del-no': pendingDelete = null; renderMap(); break;
+      case 'del-yes':
+        store.texts = store.texts.filter(t => t.id !== id);
+        if (!store.deleted.includes(id)) store.deleted.push(id);
+        if (editingId === id) cancelEdit();
+        pendingDelete = null; save(); renderMap(); break;
+    }
+  });
+
+  function startEdit(id) {
+    const t = store.texts.find(x => x.id === id);
+    if (!t) return;
+    editingId = id;
+    $('in-name').value = t.name;
+    $('in-text').value = t.text;
+    $('form-title').textContent = 'EDITAR TEXTO';
+    $('save-btn').textContent = 'ACTUALIZAR';
+    $('cancel-edit-btn').hidden = false;
+    $('form-msg').textContent = '';
+    renderMap();
+    $('form-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('in-name').focus({ preventScroll: true });
+  }
+  function cancelEdit() {
+    editingId = null;
+    $('in-name').value = '';
+    $('in-text').value = '';
+    $('form-title').textContent = 'NUEVO TEXTO';
+    $('save-btn').textContent = 'GUARDAR';
+    $('cancel-edit-btn').hidden = true;
+  }
+
+  $('save-btn').addEventListener('click', () => {
+    const name = $('in-name').value.trim();
+    const text = $('in-text').value.replace(/\r\n/g, '\n').trim();
+    const msg = $('form-msg');
+    msg.className = 'form-msg red';
+    if (!name) { msg.textContent = '* Ponle un nombre al texto.'; $('in-name').focus(); return; }
+    if (!tokenize(text).length) { msg.textContent = '* Pega el texto que quieres memorizar.'; $('in-text').focus(); return; }
+    if (editingId) {
+      const t = store.texts.find(x => x.id === editingId);
+      if (t) {
+        if (t.text !== text) { t.best = 0; t.cleared = false; t.bestLives = 0; t.attempts = 0; }
+        t.name = name; t.text = text;
+      }
+      msg.textContent = '* Texto actualizado.';
+    } else {
+      store.texts.push({ id: uid(), name, text, best: 0, cleared: false, bestLives: 0, attempts: 0 });
+      msg.textContent = '* Texto guardado. Aparece en el mapa.';
+    }
+    msg.className = 'form-msg green';
+    cancelEdit(); save(); renderMap();
+  });
+  $('cancel-edit-btn').addEventListener('click', () => { cancelEdit(); $('form-msg').textContent = ''; });
+
+  $('tg-caps').addEventListener('click', () => { store.settings.caps = !store.settings.caps; save(); renderMap(); });
+  $('tg-punct').addEventListener('click', () => { store.settings.punct = !store.settings.punct; save(); renderMap(); });
+  $('sound-btn').addEventListener('click', () => {
+    store.sound = !store.sound; save(); renderMap();
+    if (store.sound) beep([660, 880], 0.06);
+  });
+
+  /* ================= Juego ================= */
+  let g = null;              // estado de la partida
+  let modeSince = 0;         // evita que un mismo Enter dispare dos acciones
+
+  function current() { return store.texts.find(t => t.id === g.id); }
+
+  function startStudy(id) {
+    const t = store.texts.find(x => x.id === id);
+    if (!t) return;
+    g = { id, tokens: tokenize(t.text), pos: 0, lives: 3, errors: 0, hints: 0, mode: 'study', mark: -1, kind: null, last: null };
+    $('study-title').textContent = t.name;
+    $('study-count').textContent = `${g.tokens.length} palabras`;
+    show('study');
+    $('study-text').innerHTML = renderTokens(g.tokens);
+    modeSince = performance.now();
+    $('study-ready').focus();
+  }
+
+  function beginTyping() {
+    const t = current();
+    t.attempts = (t.attempts || 0) + 1; save();
+    $('study-text').innerHTML = '';
+    $('game-title').innerHTML = `${esc(t.name)}<small>no huyas de la determinación</small>`;
+    show('game');
+    skipEmpty();
+    setMode('type');
+  }
+
+  /* Si no se exige puntuación, los "tokens" que son solo signos (– , …) se saltan solos */
+  function skipEmpty() {
+    while (!store.settings.punct && g.pos < g.tokens.length && norm(g.tokens[g.pos].w) === '') g.pos++;
+  }
+
+  function setMode(mode) {
+    g.mode = mode;
+    modeSince = performance.now();
+    $('type-mode').hidden = mode !== 'type';
+    $('type-mode').style.display = mode === 'type' ? 'flex' : '';
+    ['reveal', 'confirm', 'quit'].forEach(m => {
+      const el = $(m + '-mode');
+      el.hidden = mode !== m;
+      el.style.display = mode === m ? 'flex' : '';
+    });
+    if (mode !== 'reveal') $('reveal-text').innerHTML = '';
+    renderGame();
+    if (mode === 'type') { const inp = $('word-input'); inp.value = ''; inp.focus(); }
+    if (mode === 'reveal') $('reveal-ready').focus();
+    if (mode === 'confirm') $('confirm-no').focus();
+    if (mode === 'quit') $('quit-no').focus();
+  }
+
+  function renderGame(flashLast = false) {
+    const total = g.tokens.length;
+    $('hearts').innerHTML = [0, 1, 2].map(i => heartSVG(i < g.lives ? '' : 'lost')).join('');
+    $('det-fill').style.width = (total ? g.pos / total * 100 : 0) + '%';
+    $('det-count').textContent = `${g.pos} / ${total}`;
+    $('stats-line').textContent = `* ERRORES: ${g.errors} · PISTAS: ${g.hints}`;
+    $('hint-btn').disabled = g.mode !== 'type';
+
+    if (g.mode === 'type') {
+      const done = g.tokens.slice(0, g.pos);
+      $('written').innerHTML = done.length
+        ? renderTokens(done, i => (flashLast && i === done.length - 1 ? 'flash' : '')) + '<span class="cursor"></span>'
+        : '<span class="placeholder">* Aquí aparecerá lo que vayas escribiendo bien.</span><span class="cursor"></span>';
+      const box = $('written'); box.scrollTop = box.scrollHeight;
+    }
+    if (g.mode === 'reveal') {
+      $('reveal-msg').innerHTML = g.kind === 'error'
+        ? `* Escribiste: '<span class="red">${esc(g.last.typed)}</span>'. Era: '<span class="yellow">${esc(g.last.expected)}</span>'.`
+        : `* Pista usada. Tu posición está marcada en amarillo. Memoriza y continúa cuando estés listo.`;
+      $('reveal-text').innerHTML = renderTokens(g.tokens, i =>
+        i < g.pos ? 'w-ok' : i === g.mark ? (g.kind === 'error' ? 'w-bad' : 'w-here') : '');
+      const mk = $('reveal-text').querySelector('.w-bad, .w-here');
+      if (mk) mk.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function breakHeart() {
+    const hearts = $('hearts').querySelectorAll('svg');
+    const h = hearts[g.lives]; // el corazón recién perdido
+    if (h) { h.classList.remove('lost'); h.classList.add('breaking'); }
+    shake();
+  }
+
+  function submitWord(raw) {
+    if (!g || g.mode !== 'type') return;
+    const typed = raw.trim();
+    if (!typed) return;
+    const expected = g.tokens[g.pos].w;
+    $('word-input').value = '';
+
+    if (norm(typed) === norm(expected)) {
+      g.pos++;
+      skipEmpty();
+      sfx.ok();
+      if (g.pos >= g.tokens.length) { renderGame(true); return finish(true); }
+      renderGame(true);
+      return;
+    }
+
+    g.errors++;
+    g.lives--;
+    g.last = { typed, expected };
+    g.mark = g.pos;
+    g.kind = 'error';
+    if (g.lives <= 0) return die();
+    sfx.bad();
+    setMode('reveal');
+    breakHeart();
+  }
+
+  function die() {
+    setMode('dying');
+    breakHeart();
+    sfx.die();
+    setTimeout(() => finish(false), 800);
+  }
+
+  function useHint() {
+    if (!g || (g.mode !== 'type' && g.mode !== 'confirm')) return;
+    g.hints++;
+    g.lives--;
+    g.kind = 'hint';
+    g.mark = g.pos;
+    if (g.lives <= 0) { g.last = null; return die(); }
+    sfx.hint();
+    setMode('reveal');
+    breakHeart();
+  }
+
+  function finish(won) {
+    const t = current();
+    if (t) {
+      t.best = Math.max(t.best || 0, g.pos);
+      if (won) { t.cleared = true; t.bestLives = Math.max(t.bestLives || 0, g.lives); }
+      save();
+    }
+    const total = g.tokens.length;
+    const pct = total ? Math.round(g.pos / total * 100) : 0;
+    const title = $('end-title');
+    if (won) {
+      sfx.win();
+      title.textContent = '¡TEXTO COMPLETADO!';
+      title.className = 'win';
+      $('end-msg').innerHTML = '<span class="yellow">* Te llenas de determinación.</span>';
+      $('end-detail').innerHTML = '';
+      $('end-retry').textContent = 'JUGAR DE NUEVO';
+    } else {
+      title.textContent = 'GAME OVER';
+      title.className = '';
+      $('end-msg').textContent = '* Mantén tu determinación...';
+      $('end-detail').innerHTML = g.last
+        ? `<span class="dim">Último error:</span> escribiste '<span class="red">${esc(g.last.typed)}</span>', era '<span class="yellow">${esc(g.last.expected)}</span>'.`
+        : '<span class="dim">Usaste tu última vida en una pista.</span>';
+      $('end-retry').textContent = 'REINTENTAR';
+    }
+    const rows = [
+      ['Palabras', `${g.pos} / ${total}`],
+      ['Progreso', `${pct}%`],
+      ['Errores', g.errors],
+      ['Pistas', g.hints],
+      ['Vidas restantes', Math.max(g.lives, 0)],
+      ['Récord del texto', `${Math.min(t ? t.best : g.pos, total)} / ${total}`]
+    ];
+    $('end-stats').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+    show('end');
+    g.mode = 'end';
+    $('end-retry').focus();
+  }
+
+  /* ================= Eventos del juego ================= */
+  const input = $('word-input');
+  input.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      submitWord(input.value);
+    }
+  });
+  // Teclados móviles: el espacio llega como texto, no como tecla
+  input.addEventListener('input', () => {
+    if (/\s/.test(input.value)) {
+      const first = input.value.split(/\s+/).find(Boolean) || '';
+      input.value = '';
+      submitWord(first);
+    }
+  });
+  ['paste', 'drop'].forEach(ev => input.addEventListener(ev, e => e.preventDefault()));
+
+  $('hint-btn').addEventListener('click', () => {
+    if (!g || g.mode !== 'type') return;
+    if (g.lives === 1) setMode('confirm'); else useHint();
+  });
+  const settled = () => performance.now() - modeSince > 350; // ignora Enter mantenido
+  $('confirm-yes').addEventListener('click', () => { if (settled()) useHint(); });
+  $('confirm-no').addEventListener('click', () => setMode('type'));
+  $('reveal-ready').addEventListener('click', () => { if (settled()) setMode('type'); });
+  $('quit-btn').addEventListener('click', () => setMode('quit'));
+  $('quit-yes').addEventListener('click', () => { const t = current(); if (t) { t.best = Math.max(t.best || 0, g.pos); save(); } g = null; renderMap(); show('map'); });
+  $('quit-no').addEventListener('click', () => setMode('type'));
+
+  $('study-ready').addEventListener('click', beginTyping);
+  $('study-back').addEventListener('click', () => { g = null; renderMap(); show('map'); });
+  $('end-retry').addEventListener('click', () => { if (g) startStudy(g.id); });
+  $('end-map').addEventListener('click', () => { g = null; renderMap(); show('map'); });
+
+  // Enter = "ESTOY LISTO" en las pantallas de memorizar y de revelado
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !g) return;
+    if (performance.now() - modeSince < 350) return;
+    if (e.target.tagName === 'BUTTON') return; // el botón enfocado ya maneja su Enter
+    if (g.mode === 'study') { e.preventDefault(); beginTyping(); }
+    else if (g.mode === 'reveal') { e.preventDefault(); setMode('type'); }
+  });
+
+  /* ================= Inicio ================= */
+  load();
+  if (!store.seeded && !store.texts.length) {
+    store.texts.push({ id: 'sample', name: SAMPLE.name, text: SAMPLE.text, best: 0, cleared: false, bestLives: 0, attempts: 0 });
+    store.seeded = true;
+    saveLocal();
+  }
+  renderMap();
+  show('map');
+  initSync();
+})();
+</script>
+</body>
+</html>
